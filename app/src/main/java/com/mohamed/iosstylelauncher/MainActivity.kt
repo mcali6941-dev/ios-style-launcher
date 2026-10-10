@@ -1,58 +1,42 @@
 package com.mohamed.iosstylelauncher
 
-import android.content.Context
-import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.graphics.drawable.Drawable
 import android.os.Bundle
+import android.widget.ImageView
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.graphics.drawable.toBitmap
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.view.WindowCompat
+import kotlinx.coroutines.delay
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
-data class LauncherApp(
+private data class LauncherApp(
     val name: String,
-    val packageName: String
+    val packageName: String,
+    val icon: Drawable
 )
 
 class MainActivity : ComponentActivity() {
@@ -60,305 +44,431 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+
+        val installedApps = loadApps()
+
         setContent {
-            MaterialTheme {
-                IOSStyleLauncher()
-            }
+            MohamedCaliIOS(installedApps)
         }
     }
-}
 
-@Composable
-fun IOSStyleLauncher() {
-    val context = LocalContext.current
+    private fun loadApps(): List<LauncherApp> {
+        val pm = packageManager
 
-    val apps = remember(context) {
-        loadInstalledApps(context)
-    }
-
-    var searchText by remember {
-        mutableStateOf("")
-    }
-
-    val filteredApps = apps.filter {
-        it.name.contains(searchText, ignoreCase = true)
-    }
-
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = Color(0xFFF2F4F8)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 18.dp)
-        ) {
-            Spacer(modifier = Modifier.height(24.dp))
-
-            Text(
-                text = "Hello!",
-                fontSize = 32.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF172033)
+        return try {
+            pm.getInstalledApplications(
+                PackageManager.GET_META_DATA
             )
+                .mapNotNull { app: ApplicationInfo ->
+                    val packageName = app.packageName
 
-            Text(
-                text = "Your phone, your style.",
-                fontSize = 15.sp,
-                color = Color(0xFF697386)
-            )
-
-            Spacer(modifier = Modifier.height(22.dp))
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(22.dp))
-                    .background(Color.White)
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "⌕",
-                    fontSize = 25.sp,
-                    color = Color(0xFF687386)
-                )
-
-                Spacer(modifier = Modifier.width(10.dp))
-
-                BasicTextField(
-                    value = searchText,
-                    onValueChange = { searchText = it },
-                    modifier = Modifier.weight(1f),
-                    singleLine = true,
-                    textStyle = androidx.compose.ui.text.TextStyle(
-                        fontSize = 15.sp,
-                        color = Color(0xFF172033)
-                    ),
-                    decorationBox = { innerTextField ->
-                        Box {
-                            if (searchText.isEmpty()) {
-                                Text(
-                                    text = "Search apps",
-                                    color = Color(0xFF8A94A6),
-                                    fontSize = 15.sp
-                                )
-                            }
-                            innerTextField()
-                        }
+                    if (packageName == this.packageName) {
+                        return@mapNotNull null
                     }
+
+                    val launchIntent =
+                        pm.getLaunchIntentForPackage(packageName)
+                            ?: return@mapNotNull null
+
+                    try {
+                        LauncherApp(
+                            name = app.loadLabel(pm).toString(),
+                            packageName = packageName,
+                            icon = app.loadIcon(pm)
+                        )
+                    } catch (_: Exception) {
+                        null
+                    }
+                }
+                .distinctBy { it.packageName }
+                .sortedBy { it.name.lowercase(Locale.getDefault()) }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun openApp(packageName: String) {
+        try {
+            val intent =
+                packageManager.getLaunchIntentForPackage(packageName)
+
+            if (intent != null) {
+                startActivity(intent)
+            }
+        } catch (_: Exception) {
+            // App may no longer be installed.
+        }
+    }
+
+    @Composable
+    private fun MohamedCaliIOS(
+        apps: List<LauncherApp>
+    ) {
+        var searchText by remember { mutableStateOf("") }
+
+        var currentTime by remember {
+            mutableStateOf(LocalDateTime.now())
+        }
+
+        LaunchedEffect(Unit) {
+            while (true) {
+                currentTime = LocalDateTime.now()
+                delay(1000)
+            }
+        }
+
+        val filteredApps = remember(apps, searchText) {
+            apps.filter {
+                it.name.contains(
+                    searchText,
+                    ignoreCase = true
                 )
             }
+        }
 
-            Spacer(modifier = Modifier.height(24.dp))
-
-            Text(
-                text = if (searchText.isBlank()) {
-                    "Applications"
-                } else {
-                    "Search results"
-                },
-                fontSize = 20.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = Color(0xFF172033)
+        val dockApps = remember(apps) {
+            val preferred = listOf(
+                "phone",
+                "messages",
+                "camera",
+                "chrome"
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
-
-            if (apps.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "No launchable apps found.",
-                        color = Color.Gray
+            val selected = preferred.mapNotNull { keyword ->
+                apps.firstOrNull {
+                    it.name.contains(
+                        keyword,
+                        ignoreCase = true
                     )
                 }
-            } else {
+            }.distinctBy { it.packageName }
+
+            (selected + apps.filter {
+                it !in selected
+            }).take(4)
+        }
+
+        val timeText = currentTime.format(
+            DateTimeFormatter.ofPattern(
+                "h:mm",
+                Locale.getDefault()
+            )
+        )
+
+        val dateText = currentTime.format(
+            DateTimeFormatter.ofPattern(
+                "EEEE, MMMM d",
+                Locale.ENGLISH
+            )
+        )
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color(0xFF79C7F5),
+                            Color(0xFF9CCAFB),
+                            Color(0xFFB6B9F8),
+                            Color(0xFFE5B8E8)
+                        )
+                    )
+                )
+        ) {
+
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 20.dp)
+            ) {
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Personal identity
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement =
+                        Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "MAXAMED CALI",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            letterSpacing = 2.sp
+                        )
+
+                        Text(
+                            text = "iOS",
+                            fontSize = 12.sp,
+                            color = Color.White.copy(
+                                alpha = 0.85f
+                            )
+                        )
+                    }
+
+                    Text(
+                        text = "●  ●  ●",
+                        fontSize = 12.sp,
+                        color = Color.White
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(25.dp))
+
+                // Clock
+                Text(
+                    text = timeText,
+                    fontSize = 58.sp,
+                    fontWeight = FontWeight.Light,
+                    color = Color.White
+                )
+
+                Text(
+                    text = dateText,
+                    fontSize = 17.sp,
+                    color = Color.White.copy(alpha = 0.95f)
+                )
+
+                Spacer(modifier = Modifier.height(25.dp))
+
+                // Search bar
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .clip(RoundedCornerShape(25.dp))
+                        .background(
+                            Color.White.copy(alpha = 0.35f)
+                        )
+                        .padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "⌕",
+                        fontSize = 26.sp,
+                        color = Color.White
+                    )
+
+                    Spacer(modifier = Modifier.width(10.dp))
+
+                    Box(
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        if (searchText.isEmpty()) {
+                            Text(
+                                text = "Search Apps",
+                                color = Color.White.copy(
+                                    alpha = 0.9f
+                                ),
+                                fontSize = 15.sp
+                            )
+                        }
+
+                        BasicTextField(
+                            value = searchText,
+                            onValueChange = {
+                                searchText = it
+                            },
+                            singleLine = true,
+                            textStyle = androidx.compose.ui.text.TextStyle(
+                                color = Color.White,
+                                fontSize = 15.sp
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(22.dp))
+
+                Text(
+                    text = if (searchText.isBlank()) {
+                        "Your Apps"
+                    } else {
+                        "Search Results"
+                    },
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // App grid
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(4),
                     modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(bottom = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(20.dp)
+                    contentPadding = PaddingValues(
+                        bottom = 12.dp
+                    ),
+                    horizontalArrangement =
+                        Arrangement.spacedBy(10.dp),
+                    verticalArrangement =
+                        Arrangement.spacedBy(22.dp)
                 ) {
                     items(
                         items = filteredApps,
                         key = { it.packageName }
                     ) { app ->
-                        AppIcon(
-                            app = app,
-                            onClick = {
-                                launchApp(context, app.packageName)
+
+                        Column(
+                            horizontalAlignment =
+                                Alignment.CenterHorizontally,
+                            modifier = Modifier.clickable {
+                                openApp(app.packageName)
                             }
-                        )
+                        ) {
+
+                            Box(
+                                modifier = Modifier
+                                    .size(58.dp)
+                                    .clip(
+                                        RoundedCornerShape(17.dp)
+                                    )
+                                    .background(
+                                        Color.White.copy(
+                                            alpha = 0.92f
+                                        )
+                                    )
+                                    .padding(5.dp),
+                                contentAlignment =
+                                    Alignment.Center
+                            ) {
+                                AndroidView(
+                                    factory = { context ->
+                                        ImageView(context).apply {
+                                            scaleType =
+                                                ImageView.ScaleType
+                                                    .FIT_CENTER
+                                            setImageDrawable(app.icon)
+                                            contentDescription =
+                                                app.name
+                                        }
+                                    },
+                                    update = { imageView ->
+                                        imageView.setImageDrawable(
+                                            app.icon
+                                        )
+                                    },
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+
+                            Spacer(
+                                modifier = Modifier.height(6.dp)
+                            )
+
+                            Text(
+                                text = app.name,
+                                fontSize = 10.sp,
+                                color = Color.White,
+                                textAlign = TextAlign.Center,
+                                maxLines = 2,
+                                lineHeight = 12.sp
+                            )
+                        }
                     }
                 }
-            }
 
-            // iPhone-inspired bottom dock
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(30.dp))
-                    .background(Color(0xDDE0E7F2))
-                    .padding(vertical = 12.dp, horizontal = 8.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                val dockApps = listOf(
-                    apps.firstOrNull {
-                        it.name.contains("Phone", true) ||
-                        it.name.contains("Call", true)
-                    },
-                    apps.firstOrNull {
-                        it.name.contains("Message", true) ||
-                        it.name.contains("SMS", true)
-                    },
-                    apps.firstOrNull {
-                        it.name.contains("Camera", true)
-                    },
-                    apps.firstOrNull {
-                        it.name.contains("Chrome", true) ||
-                        it.name.contains("Browser", true)
-                    }
-                ).filterNotNull().distinctBy { it.packageName }
-
-                if (dockApps.isEmpty()) {
-                    Text(
-                        text = "Apps",
-                        color = Color(0xFF172033),
-                        fontWeight = FontWeight.Medium
-                    )
-                } else {
+                // Dock
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(28.dp))
+                        .background(
+                            Color.White.copy(alpha = 0.30f)
+                        )
+                        .padding(
+                            horizontal = 14.dp,
+                            vertical = 12.dp
+                        ),
+                    horizontalArrangement =
+                        Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     dockApps.forEach { app ->
-                        AppIcon(
-                            app = app,
-                            onClick = {
-                                launchApp(context, app.packageName)
-                            },
-                            showLabel = false
+
+                        Box(
+                            modifier = Modifier
+                                .size(54.dp)
+                                .clip(
+                                    RoundedCornerShape(16.dp)
+                                )
+                                .background(
+                                    Color.White.copy(
+                                        alpha = 0.95f
+                                    )
+                                )
+                                .clickable {
+                                    openApp(app.packageName)
+                                }
+                                .padding(5.dp),
+                            contentAlignment =
+                                Alignment.Center
+                        ) {
+                            AndroidView(
+                                factory = { context ->
+                                    ImageView(context).apply {
+                                        scaleType =
+                                            ImageView.ScaleType
+                                                .FIT_CENTER
+                                        setImageDrawable(app.icon)
+                                        contentDescription =
+                                            app.name
+                                    }
+                                },
+                                update = { imageView ->
+                                    imageView.setImageDrawable(
+                                        app.icon
+                                    )
+                                },
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Home page indicator
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement =
+                        Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    repeat(3) { index ->
+                        Box(
+                            modifier = Modifier
+                                .padding(horizontal = 3.dp)
+                                .size(
+                                    if (index == 0) 7.dp else 5.dp
+                                )
+                                .clip(
+                                    RoundedCornerShape(50)
+                                )
+                                .background(
+                                    Color.White.copy(
+                                        alpha = if (index == 0) {
+                                            1f
+                                        } else {
+                                            0.55f
+                                        }
+                                    )
+                                )
                         )
                     }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(12.dp))
-        }
-    }
-}
-
-@Composable
-fun AppIcon(
-    app: LauncherApp,
-    onClick: () -> Unit,
-    showLabel: Boolean = true
-) {
-    val context = LocalContext.current
-
-    val iconBitmap = remember(app.packageName) {
-        runCatching {
-            context.packageManager
-                .getApplicationIcon(app.packageName)
-                .toBitmap(144, 144)
-                .asImageBitmap()
-        }.getOrNull()
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        if (iconBitmap != null) {
-            Image(
-                bitmap = iconBitmap,
-                contentDescription = app.name,
-                modifier = Modifier
-                    .size(56.dp)
-                    .clip(RoundedCornerShape(15.dp)),
-                contentScale = ContentScale.Fit
-            )
-        } else {
-            Box(
-                modifier = Modifier
-                    .size(56.dp)
-                    .clip(RoundedCornerShape(15.dp))
-                    .background(Color(0xFFDAE3F0)),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = app.name.take(1).uppercase(),
-                    fontSize = 23.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF34445E)
-                )
+                Spacer(modifier = Modifier.height(10.dp))
             }
         }
-
-        if (showLabel) {
-            Spacer(modifier = Modifier.height(5.dp))
-
-            Text(
-                text = app.name,
-                fontSize = 11.sp,
-                color = Color(0xFF253047),
-                textAlign = TextAlign.Center,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-    }
-}
-
-fun loadInstalledApps(context: Context): List<LauncherApp> {
-    val packageManager = context.packageManager
-
-    return try {
-        packageManager
-            .getInstalledApplications(PackageManager.GET_META_DATA)
-            .asSequence()
-            .filter { info ->
-                packageManager.getLaunchIntentForPackage(
-                    info.packageName
-                ) != null
-            }
-            .filter { info ->
-                info.packageName != context.packageName
-            }
-            .map { info ->
-                LauncherApp(
-                    name = packageManager
-                        .getApplicationLabel(info)
-                        .toString(),
-                    packageName = info.packageName
-                )
-            }
-            .distinctBy { it.packageName }
-            .sortedBy { it.name.lowercase() }
-            .toList()
-    } catch (_: Exception) {
-        emptyList()
-    }
-}
-
-fun launchApp(
-    context: Context,
-    packageName: String
-) {
-    try {
-        val intent = context.packageManager
-            .getLaunchIntentForPackage(packageName)
-
-        if (intent != null) {
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(intent)
-        }
-    } catch (_: Exception) {
-        // The application may have been removed or disabled.
     }
 }
