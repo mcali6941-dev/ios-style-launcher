@@ -10,6 +10,7 @@
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
 
+        <!-- Home Screen-ka launcher-ka -->
         <activity
             android:name=".MainActivity"
             android:exported="true">
@@ -19,6 +20,14 @@
                 <category android:name="android.intent.category.HOME" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
+
+        </activity>
+
+        <!-- Astaanta app-ka waxay furaysaa Settings -->
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="true"
+            android:label="Maxamed Cali iOS">
 
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
